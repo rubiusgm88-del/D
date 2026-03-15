@@ -1,14 +1,13 @@
-from keep_alive import keep_alive
 import discord
+import time
+import threading
 from discord import app_commands
 from discord.ext import commands
 import os
 import datetime
 import random
 import asyncio
-from flask import Flask
-from threading import Thread
-intents = discord.Intents.default()
+intents = discord.Intents.all()
 intents.message_content = True
 intents.members = True
 intents.messages = True
@@ -20,10 +19,6 @@ class MyBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
 
-        self.warns = {}
-        self.snipes = {}
-        self.levels = {}  # Aquí guardaremos la XP de cada usuario
-        self.log_channel_id = 1450179656824258610
 
     async def setup_hook(self):
         await self.tree.sync()
@@ -406,6 +401,7 @@ async def on_member_join(member):
         embed.set_thumbnail(url=member.display_avatar.url)
         embed.set_footer(text=f"Eres el miembro número {member.guild.member_count}")
         await channel.send(embed=embed)
+
 @bot.tree.command(name="celebrar",
                   description="Lanza una ráfaga de confeti y celebración")
 async def celebrar(interaction: discord.Interaction, motivo: str):
@@ -908,5 +904,46 @@ async def on_guild_join(guild):
             
             await channel.send(embed=embed)
             break
-keep_alive()
-bot.run(os.environ['TOKEN'])
+
+# --- SUSTITUYE EL FINAL (desde el thread de flask) POR ESTO ---
+
+def run_flask():
+    # El puerto DEBE ser 7860 para Hugging Face
+    app.run(host='0.0.0.0', port=7860)
+
+if __name__ == "__main__":
+    # 1. Arrancamos Flask para que Hugging Face vea que estamos "Running"
+    import threading
+    t = threading.Thread(target=run_flask)
+    t.daemon = True
+    t.start()
+    
+    # 2. Inicializamos el bot
+    bot = MyBot()
+    bot.warns = {}
+    bot.snipes = {}
+    bot.levels = {}
+
+# 3. LEEMOS Y LIMPIAMOS EL TOKEN
+# Usamos el nombre DISCORD_TOKEN para evitar bloqueos de red
+raw_token = os.environ.get('DISCORD_TOKEN', '')
+clean_token = raw_token.strip()
+
+if not clean_token:
+    print("❌ ERROR: El Secreto 'DISCORD_TOKEN' no existe o está vacío en Settings.")
+else:
+    try:
+            import aiohttp
+            import asyncio
+            print("🚀 Aplicando parche de red con DNS externo y lanzando...")
+            
+            async def start_bot():
+                # Forzamos el uso de IPv4 y desactivamos la caché de DNS interna
+                connector = aiohttp.TCPConnector(use_dns_cache=False, family=0)
+                async with aiohttp.ClientSession(connector=connector) as session:
+                    bot.http.connector = connector
+                    await bot.start(clean_token)
+
+            asyncio.run(start_bot())
+    except Exception as e:
+        print(f"❌ FALLO DEFINITIVO: {e}")
